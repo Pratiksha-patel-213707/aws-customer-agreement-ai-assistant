@@ -1,8 +1,8 @@
 # AWS Customer Agreement AI Assistant
 
-A lightweight RAG-based assistant for querying the AWS Customer Agreement PDF. The project combines a FastAPI backend, local retrieval logic, optional LLM generation, and a small React frontend for chat and analytics.
+A lightweight RAG-based assistant for querying the AWS Customer Agreement PDF. The project combines a FastAPI backend, retrieval logic, optional LLM generation, and a small React frontend for chat and analytics.
 
-## Overview
+## 1. Overview
 
 This application lets you:
 
@@ -11,109 +11,180 @@ This application lets you:
 - retrieve the most relevant passages for a question, and
 - return a grounded answer with source references.
 
-It is designed for document-grounded Q&A.
+It is designed for document-grounded Q&A over legal text.
 
-## Main Features
+## 2. Features
 
 - **Document ingestion** with text extraction and OCR fallback.
 - **Chunk-based retrieval** using embeddings and cosine similarity.
 - **Answer generation** with provider fallback when model calls are unavailable.
 - **Analytics logging** for frequent questions, no-answer cases, latency, and query volume.
-- **Simple frontend dashboard** to ask questions and inspect results.
+- **Frontend dashboard** to ask questions and inspect results.
 
-## Architecture
+## 3. Architecture Overview
 
-- `POST /ingest` extracts text from `AWS Customer Agreement.pdf`, uses OCR when the PDF has no selectable text, chunks the document, creates embeddings, and stores the vector metadata under `data/vector_store`.
-- `POST /ask` embeds the user's question, retrieves relevant chunks, generates a grounded answer, returns the answer plus source references, and logs the interaction to SQLite.
-- `GET /analytics` reads usage logs to report frequent questions, no-answer queries, latency, and daily activity.
-- `frontend/` is a Vite React app that calls the FastAPI backend.
+The project is split into three main layers:
 
-## Design Notes
+- **Frontend**: React/Vite app that lets the user ask questions and view analytics.
+- **Backend**: FastAPI service that exposes `/ingest`, `/ask`, and `/analytics`.
+- **Retrieval + LLM pipeline**: loads the PDF, chunks it, embeds it, retrieves evidence, and produces a final answer.
 
-- Chunking uses LangChain `RecursiveCharacterTextSplitter` with `chunk_size=1000` and `chunk_overlap=200` to preserve clause context while keeping sections readable.
-- Embeddings default to the Hugging Face backend (`BAAI/bge-small-en-v1.5`), while the repository also supports a TF-IDF fallback for environments without model downloads.
-- Retrieval uses a reranking workflow so the most relevant evidence is prioritized before answer generation.
-- The query pipeline expands a few common legal phrases to improve intent matching without changing the document content.
-- SQLite stores query text, canonical grouping data, answers, top similarity scores, provider details, and timestamps.
+A simple flow is:
 
-## Prerequisites
+1. The user submits a question from the frontend.
+2. The backend checks whether the document has already been ingested.
+3. If needed, the PDF is extracted, split into chunks, and embeddings are stored.
+4. The retrieval layer scores the relevant chunks.
+5. The answer layer generates a concise answer grounded in the retrieved evidence.
+6. The interaction is logged so analytics can show query patterns.
+
+For a more detailed architecture explanation, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## 4. Design Decisions and Assumptions
+
+- **Chunking strategy**: `RecursiveCharacterTextSplitter` with `chunk_size=1000` and `chunk_overlap=200` to preserve clause context while keeping sections readable.
+- **Top-k retrieval**: the app retrieves a small set of relevant sections (`top_k=6` by default) and expands the candidate pool before reranking.
+- **Embedding choice**: the project prefers Hugging Face embeddings when available, but falls back to TF-IDF if embeddings cannot be downloaded.
+- **Answering behavior**: the response pipeline favors direct, synthesized answers over long copied text.
+- **Analytics model**: usage logs are stored in SQLite so the dashboard can show recent queries, latency, and common patterns.
+- **Assumption**: the PDF content is readable enough for extraction; OCR is used when needed.
+
+## 5. Prerequisites
 
 - Python 3.10+
 - Node.js and npm
 - A readable copy of `AWS Customer Agreement.pdf`
-- Optional API keys for Gemini or Hugging Face
+- Optional API keys for Hugging Face or Gemini
 
-## Setup
+## 6. End-to-End Setup
+
+### Step 1: Clone the repository
+
+```bash
+git clone https://github.com/Pratiksha-patel-213707/aws-customer-agreement-ai-assistant.git
+cd aws-customer-agreement-ai-assistant
+```
+
+### Step 2: Create a virtual environment
 
 ```bash
 python -m venv .venv
-.\.venv\Scripts\activate
+```
+
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+On macOS/Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+### Step 3: Install Python dependencies
+
+```bash
 pip install -r requirements.txt
+```
+
+### Step 4: Create environment variables
+
+Copy the example file:
+
+```bash
 copy .env.example .env
 ```
 
-Configure one of the following providers in `.env`:
+Then choose one provider configuration:
 
-```bash
-HUGGINGFACE_API_KEY=your_key_here
+For Hugging Face:
+
+```env
 LLM_PROVIDER=huggingface
+HUGGINGFACE_API_KEY=your_key_here
 ```
 
-or:
+For Gemini:
 
-```bash
-GEMINI_API_KEY=your_key_here
+```env
 LLM_PROVIDER=gemini
+GEMINI_API_KEY=your_key_here
 ```
 
-## Run the Backend
+If you do not configure a provider key, the app still runs with fallback behavior for retrieval and local answer heuristics.
+
+### Step 5: Install frontend dependencies
 
 ```bash
-.\.venv\Scripts\activate
+cd frontend
+npm install
+cd ..
+```
+
+## 7. Run the Application
+
+### Start the backend
+
+```bash
 uvicorn backend.app.main:app --reload
 ```
 
-Open the API docs at `http://localhost:8000/docs`.
+The API will be available at:
 
-To ingest the PDF:
+- http://localhost:8000/docs
+
+### Start the frontend
+
+In another terminal:
+
+```bash
+cd frontend
+npm run dev
+```
+
+The frontend will be available at:
+
+- http://localhost:5173
+
+### Ingest the document
+
+Once the backend is running:
 
 ```bash
 curl -X POST http://localhost:8000/ingest
 ```
 
-If ingestion reports that no text could be extracted, replace the PDF with a readable version and run `/ingest` again. The pipeline supports selectable text PDFs and scanned PDFs when OCR is available.
+If ingestion reports that no text could be extracted, replace the PDF with a readable version and run the endpoint again.
 
-## Run the Frontend
+## 8. Demo / Testing Flow
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open `http://localhost:5173`.
-
-## Seed Analytics Data
-
-After the backend is running, you can generate sample logs:
+You can generate sample questions for analytics with:
 
 ```bash
-.\.venv\Scripts\python.exe backend\seed_queries.py
+python backend/seed_queries.py
 ```
 
-You can also refresh analytics directly from the API:
+You can also inspect analytics directly:
 
 ```bash
 curl http://localhost:8000/analytics
 ```
 
-## Project Structure
+Suggested demo questions:
+
+- “What services are covered by the agreement?”
+- “When does the agreement term begin?”
+- “Does this document explain sourdough bread?”
+
+## 9. Project Structure
 
 ```text
 backend/
   app/
     config.py       environment settings
-    database.py     SQLite schema, logging, analytics SQL
+    database.py     SQLite schema and analytics logic
     llm.py          answer generation and fallback logic
     main.py         FastAPI routes
     pdf_loader.py   PDF text extraction and OCR fallback
@@ -122,13 +193,13 @@ frontend/
   src/
     main.jsx        React chat and analytics dashboard
     styles.css      UI styles
+docs/
+  ARCHITECTURE.md   architecture notes
 ```
 
-## Demo Checklist
+## 10. Submission Notes
 
-1. Start the FastAPI server.
-2. Start the React frontend.
-3. Run the ingestion step.
-4. Ask questions such as "When can AWS suspend services?"
-5. Ask out-of-scope questions such as "Does this document explain sourdough bread?"
-6. Review analytics for frequent questions, no-answer cases, and response latency.
+- The repository includes the full source code for both backend and frontend.
+- The README is intended to let someone clone the repo and follow the setup steps without needing extra instructions.
+- The architecture details are documented separately in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- A short demo video/GIF should be added to the repository or linked from the README to show the app running and the analytics dashboard being used.
