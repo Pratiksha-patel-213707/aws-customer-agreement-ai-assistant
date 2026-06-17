@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pydantic
+requests
+PyPDF2
+numpy
+python-dotenv
+pydantic-settings
+sentence-transformers
+scikit-learn
+PyMuPDF
+pytesseract
+Pillow
+langchain-text-splitters
+langchain-huggingface
